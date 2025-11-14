@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Banco de dados PostgreSQL para o HAPI FHIR
+  postgres:
+    image: postgres:15-alpine
+    container_name: fhir-postgres
+    environment:
+      POSTGRES_DB: hapi
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - fhir-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Servidor HAPI FHIR
+  hapi-fhir:
+    image: hapiproject/hapi:latest
+    container_name: hapi-fhir-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Configurações do Spring Boot
+      spring.datasource.url: jdbc:postgresql://postgres:5432/hapi
+      spring.datasource.username: admin
+      spring.datasource.password: admin
+      spring.datasource.driverClassName: org.postgresql.Driver
+      spring.jpa.properties.hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      
+      # Configurações do HAPI FHIR
+      hapi.fhir.fhir_version: R4
+      hapi.fhir.server_address: http://localhost:8080/fhir
+      hapi.fhir.allow_external_references: true
+      hapi.fhir.allow_multiple_delete: true
+      hapi.fhir.allow_placeholder_references: true
+      hapi.fhir.auto_create_placeholder_reference_targets: true
+      hapi.fhir.enable_index_missing_fields: true
+      hapi.fhir.enforce_referential_integrity_on_write: false
+      hapi.fhir.enforce_referential_integrity_on_delete: false
+      hapi.fhir.narrative_enabled: true
+      hapi.fhir.validation.enabled: true
+      hapi.fhir.validation.requests_enabled: true
+      
+      # Configurações de performance
+      hapi.fhir.max_page_size: 200
+      hapi.fhir.default_page_size: 20
+      hapi.fhir.reuse_cached_search_results_millis: 60000
+      
+      # Subscription
+      hapi.fhir.subscription.resthook_enabled: true
+      hapi.fhir.subscription.websocket_enabled: true
+      
+      # CORS
+      hapi.fhir.cors.allowed_origin: "*"
+      
+      # Logging
+      logging.level.ca.uhn.fhir: INFO
+      
+    ports:
+      - "8080:8080"
+    volumes:
+      - hapi_data:/data/hapi
+    networks:
+      - fhir-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # pgAdmin para gerenciamento do banco de dados (opcional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: fhir-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    networks:
+      - fhir-network
+    depends_on:
+      - postgres
+
+networks:
+  fhir-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  hapi_data:
