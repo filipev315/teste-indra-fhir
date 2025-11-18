@@ -20,6 +20,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # Servidor HAPI FHIR
   hapi-fhir:
@@ -35,6 +36,7 @@ services:
       spring.datasource.password: admin
       spring.datasource.driverClassName: org.postgresql.Driver
       spring.jpa.properties.hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      spring.jpa.properties.hibernate.search.enabled: false
       
       # Configurações do HAPI FHIR
       hapi.fhir.fhir_version: R4
@@ -46,24 +48,38 @@ services:
       hapi.fhir.enable_index_missing_fields: true
       hapi.fhir.enforce_referential_integrity_on_write: false
       hapi.fhir.enforce_referential_integrity_on_delete: false
+      
+      # ⚠️ DESABILITAR VALIDAÇÃO DE PROFILES
+      hapi.fhir.validation.requests_enabled: false
+      
+      # Narrative
       hapi.fhir.narrative_enabled: true
-      hapi.fhir.validation.enabled: true
-      hapi.fhir.validation.requests_enabled: true
       
       # Configurações de performance
       hapi.fhir.max_page_size: 200
       hapi.fhir.default_page_size: 20
       hapi.fhir.reuse_cached_search_results_millis: 60000
+      hapi.fhir.expunge_enabled: true
+      hapi.fhir.delete_expunge_enabled: true
       
       # Subscription
       hapi.fhir.subscription.resthook_enabled: true
-      hapi.fhir.subscription.websocket_enabled: true
+      hapi.fhir.subscription.websocket_enabled: false
       
-      # CORS
+      # CORS - Permitir todas as origens
       hapi.fhir.cors.allowed_origin: "*"
+      hapi.fhir.cors.allow_credentials: true
       
       # Logging
       logging.level.ca.uhn.fhir: INFO
+      logging.level.ca.uhn.fhir.jpa.dao: INFO
+      
+      # Permitir recursos desconhecidos
+      hapi.fhir.allow_contains_searches: true
+      hapi.fhir.allow_override_default_search_params: true
+      
+      # Configurações de memória JVM
+      JAVA_OPTS: "-Xmx2g -Xms1g"
       
     ports:
       - "8080:8080"
@@ -72,11 +88,18 @@ services:
     networks:
       - fhir-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/fhir/metadata || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
 
   # pgAdmin para gerenciamento do banco de dados (opcional)
   pgadmin:
@@ -92,6 +115,7 @@ services:
       - fhir-network
     depends_on:
       - postgres
+    restart: unless-stopped
 
 networks:
   fhir-network:
@@ -99,4 +123,6 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
   hapi_data:
+    driver: local
